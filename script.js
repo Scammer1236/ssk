@@ -67,11 +67,43 @@ $("#polaroids").innerHTML = CONFIG.photos.map(p =>
 $("#chats").innerHTML = CONFIG.chats.map(c =>
   `<figure class="chat"><img src="${c.src}" loading="lazy" alt="" onerror="this.closest('.chat').remove()"><p>${c.cap}</p></figure>`).join("");
 $("#videos").innerHTML = CONFIG.videos.map(v =>
-  `<figure class="vid"><video src="${v.src}" controls playsinline preload="metadata" onerror="this.closest('.vid').remove()"></video><p>${v.cap}</p></figure>`).join("");
+  `<figure class="vid"><video src="${v.src}" muted loop playsinline webkit-playsinline preload="auto" onerror="this.closest('.vid').remove()"></video><p>${v.cap}</p></figure>`).join("");
 
+/* videos: silent, play only while on screen, tap to pause/play */
+const vidIO = new IntersectionObserver(es => es.forEach(e => {
+  const v = e.target; v.muted = true;
+  if (e.isIntersecting) v.play().catch(() => {}); else v.pause();
+}), { threshold: .5 });
 document.querySelectorAll(".vid video").forEach(v => {
-  v.addEventListener("play", () => song.pause());
-  v.addEventListener("pause", () => { if (!musicBtn.classList.contains("off")) song.play().catch(() => {}); });
+  v.muted = true; vidIO.observe(v);
+  v.addEventListener("click", () => v.paused ? v.play() : v.pause());
+});
+
+/* photo / screenshot / video rows drift sideways by themselves.
+   Touching a row pauses it; it resumes a few seconds later. Bounces at the ends. */
+document.querySelectorAll(".rail").forEach(rail => {
+  if (reduce) return;
+  const speed = rail.id === "videos" ? 22 : 30;   // pixels per second
+  let pos = 0, dir = 1, last = 0, visible = false, touching = false, idleUntil = 0, hold = 0;
+  new IntersectionObserver(es => visible = es[0].isIntersecting, { threshold: .25 }).observe(rail);
+  const stop = () => { touching = true; };
+  const go = () => { touching = false; idleUntil = performance.now() + 2800; };
+  ["touchstart", "pointerdown", "wheel", "mousedown"].forEach(ev => rail.addEventListener(ev, stop, { passive: true }));
+  ["touchend", "touchcancel", "pointerup", "mouseup", "mouseleave"].forEach(ev => rail.addEventListener(ev, go, { passive: true }));
+  rail.addEventListener("wheel", go, { passive: true });
+  (function tick(t) {
+    const dt = Math.min(64, t - (last || t)); last = t;
+    const max = rail.scrollWidth - rail.clientWidth;
+    if (!visible || touching || t < idleUntil || max <= 0) { pos = rail.scrollLeft; }
+    else if (hold > 0) { hold -= dt; }
+    else {
+      pos += dir * speed * dt / 1000;
+      if (pos >= max) { pos = max; dir = -1; hold = 1200; }
+      else if (pos <= 0) { pos = 0; dir = 1; hold = 1200; }
+      rail.scrollLeft = pos;
+    }
+    requestAnimationFrame(tick);
+  })(performance.now());
 });
 
 /* ---------- reveal on scroll ---------- */
